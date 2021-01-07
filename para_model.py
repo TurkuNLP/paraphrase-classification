@@ -40,5 +40,5 @@ class PARAModel(pl.LightningModule):
         
 
     def configure_optimizers(self):
-        optimizer = transformers.optimization.AdamW(self.parameters(), lr=0.0000002)
+        optimizer = transformers.optimization.AdamW(self.parameters(), lr=2e-5)
         return optimizer
