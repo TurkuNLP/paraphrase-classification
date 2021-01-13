@@ -2,6 +2,16 @@ import transformers
 import torch
 import pytorch_lightning as pl
 
+def compute_masks(mask):
+    one_idx = [i for i, b in enumerate(mask) if b]
+    zeros = torch.zeros(len(mask), dtype=torch.long)
+    cls_mask, sep1_mask, sep2_mask = [torch.scatter(zeros, 0, torch.tensor(i), torch.tensor(1)) for i in one_idx]
+    left_idx = torch.tensor(range(one_idx[0]+1, one_idx[1]))
+    left_mask = torch.scatter(zeros, 0, left_idx, torch.ones(len(left_idx), dtype=torch.long))
+    right_idx = torch.tensor(range(one_idx[1]+1, one_idx[2]))
+    right_mask = torch.scatter(zeros, 0, right_idx, torch.ones(len(right_idx), dtype=torch.long))
+    return {'cls_mask': cls_mask, 'sep1_mask': sep1_mask, 'sep2_mask': sep2_mask, 'left_mask': left_mask, 'right_mask': right_mask}
+
 class PARADataset(torch.utils.data.Dataset):
 
     def __init__(self,fname,bert_tokenizer,rew_dir=False):
@@ -31,13 +41,13 @@ class PARADataset(torch.utils.data.Dataset):
         item=self.data_list[key]
         t1_tok=self.bert_tokenizer.convert_tokens_to_ids(self.bert_tokenizer.tokenize(item["txt1"]))
         t2_tok=self.bert_tokenizer.convert_tokens_to_ids(self.bert_tokenizer.tokenize(item["txt2"]))
-        encoded=self.bert_tokenizer.prepare_for_model(t1_tok,t2_tok,return_length=True) #todo overflow and whatnot
-        
-        return {"input_ids":encoded.input_ids,"token_type_ids":encoded.token_type_ids,"attention_mask":encoded.attention_mask,"length":encoded.length,"label":self.lab2i[item["label"]]}
+        encoded=self.bert_tokenizer.prepare_for_model(t1_tok,t2_tok,return_length=True,return_special_tokens_mask=True) #todo overflow and whatnot
+
+        return {"input_ids":encoded.input_ids, "token_type_ids":encoded.token_type_ids, "attention_mask":encoded.attention_mask, "length":encoded.length, "label":self.lab2i[item["label"]], **compute_masks(encoded.special_tokens_mask)}
 
 def collate(itemlist):
     batch={}
-    for k in "input_ids","attention_mask","token_type_ids":
+    for k in "input_ids","attention_mask","token_type_ids", "cls_mask", "sep1_mask", "sep2_mask", "left_mask", "right_mask":
         batch[k]=pad_with_zero([item[k] for item in itemlist])
     batch["label"]=torch.LongTensor([item["label"] for item in itemlist])
     return batch
