@@ -7,14 +7,7 @@ def evaluate(data, model):
     with torch.no_grad():
         preds = []
         for batch in data.val_dataloader():
-            output = model(batch['input_ids'].cuda(),
-                           batch['token_type_ids'].cuda(),
-                           batch['attention_mask'].cuda(),
-                           batch['cls_mask'].cuda(),
-                           batch['sep1_mask'].cuda(),
-                           batch['sep2_mask'].cuda(),
-                           batch['left_mask'].cuda(),
-                           batch['right_mask'].cuda()).argmax(-1)
+            output = model({k: v.cuda() for k, v in batch.items()}).argmax(-1)
             preds.append(output)
 
     preds = [e.item() for t in preds for e in t]
