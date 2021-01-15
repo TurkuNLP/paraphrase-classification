@@ -3,8 +3,9 @@ from para_evaluate import evaluate
 import torch
 import argparse
 import pytorch_lightning as pl
-import para_model
 import para_data
+import para_model
+import para_averaging
 
 # Saves both the most accurate evaluated model as well as the last evaluated model.
 checkpoint_callback = pl.callbacks.ModelCheckpoint(
@@ -16,12 +17,21 @@ checkpoint_callback = pl.callbacks.ModelCheckpoint(
     save_last=True
 )
 
+lr_monitor_callback = pl.callbacks.LearningRateMonitor(logging_interval='step')
+
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--load_checkpoint', default=None)
+    parser.add_argument('--model', default='averaging')
 
     args = parser.parse_args()
     load_checkpoint = args.load_checkpoint
+    if args.model == 'pooler':
+        model_class = para_model.PARAModel
+    else:
+        model_class = para_averaging.ParaAvgModel
+
+    print(f"Using model: {args.model}")
 
     epochs = 4
     batch_size = 16
@@ -30,11 +40,13 @@ if __name__=="__main__":
     size_train = len(data.train_data)
     steps_per_epoch = int(size_train/batch_size)
     steps_train = steps_per_epoch*epochs
+    # weights = torch.tensor(compute_class_weight('balanced', [l for l in range(4)], [t['label'] for t in data.train_data]))
+    # print(f"Weights: {weights}")
 
     if load_checkpoint:
-        model = para_model.PARAModel.load_from_checkpoint(checkpoint_path=load_checkpoint, steps_train=steps_train)
+        model = model_class.load_from_checkpoint(checkpoint_path=load_checkpoint, steps_train=steps_train)
     else:
-        model = para_model.PARAModel(steps_train=steps_train)
+        model = model_class(steps_train=steps_train)
 
     trainer = pl.Trainer(
         resume_from_checkpoint=load_checkpoint,
@@ -50,5 +62,9 @@ if __name__=="__main__":
 
     model.eval()
     model.cuda()
-    
     evaluate(data, model)
+
+    best_model = model_class.load_from_checkpoint(checkpoint_path=checkpoint_callback.best_model_path)
+    best_model.eval()
+    best_model.cuda()
+    evaluate(data, best_model)
