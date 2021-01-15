@@ -1,3 +1,4 @@
+from sklearn.preprocessing import LabelEncoder
 import transformers
 import torch
 import pytorch_lightning as pl
@@ -14,12 +15,12 @@ def compute_masks(mask):
 
 class PARADataset(torch.utils.data.Dataset):
 
-    def __init__(self,fname,bert_tokenizer,rew_dir=False):
+    def __init__(self,fname,bert_tokenizer, rew_dir=False, label_encoder=None):
         super().__init__()
         self.data_list=[]
         self.bert_tokenizer=bert_tokenizer
-        self.lab2i={"3":0,"4":1,"4<":2,"4>":3} #TODO LOAD
-        
+        self.label_encoder = label_encoder
+
         with open(fname,"rt") as f:
             for line in f:
                 line=line.rstrip("\n")
@@ -33,6 +34,14 @@ class PARADataset(torch.utils.data.Dataset):
                     else:
                         rew_label=label
                     self.data_list.append({"label":rew_label,"txt1":txt2,"txt2":txt1})
+        
+        if not self.label_encoder:
+            self.label_encoder = LabelEncoder()
+            self.label_encoder.fit([d['label'] for d in self.data_list])
+        
+        transformed = self.label_encoder.transform([d['label'] for d in self.data_list])
+        for d, e in zip(self.data_list, transformed):
+            d['label'] = e
 
     def __len__(self):
         return len(self.data_list)
@@ -43,7 +52,7 @@ class PARADataset(torch.utils.data.Dataset):
         t2_tok=self.bert_tokenizer.convert_tokens_to_ids(self.bert_tokenizer.tokenize(item["txt2"]))
         encoded=self.bert_tokenizer.prepare_for_model(t1_tok,t2_tok,return_length=True,return_special_tokens_mask=True) #todo overflow and whatnot
 
-        return {"input_ids":encoded.input_ids, "token_type_ids":encoded.token_type_ids, "attention_mask":encoded.attention_mask, "length":encoded.length, "label":self.lab2i[item["label"]], **compute_masks(encoded.special_tokens_mask)}
+        return {"input_ids":encoded.input_ids, "token_type_ids":encoded.token_type_ids, "attention_mask":encoded.attention_mask, "length":encoded.length, "label":item["label"], **compute_masks(encoded.special_tokens_mask)}
 
 def collate(itemlist):
     batch={}
@@ -68,8 +77,8 @@ class PARADataModule(pl.LightningDataModule):
     def setup(self,stage=None):
         self.bert_tokenizer=transformers.BertTokenizer.from_pretrained(self.bert_model)
         self.train_data=PARADataset("para_train.tsv",self.bert_tokenizer,rew_dir=True)
-        self.dev_data=PARADataset("para_dev.tsv",self.bert_tokenizer)
-        self.test_data=PARADataset("para_test.tsv",self.bert_tokenizer)
+        self.dev_data=PARADataset("para_dev.tsv", self.bert_tokenizer, label_encoder=self.train_data.label_encoder)
+        self.test_data=PARADataset("para_test.tsv", self.bert_tokenizer, label_encoder=self.train_data.label_encoder)
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train_data, collate_fn=collate, batch_size=self.batch_size, shuffle=True)

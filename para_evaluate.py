@@ -23,11 +23,10 @@ def evaluate(data, model):
     preds = [e.item() for t in preds for e in t]
     eval_labels = [x['label'] for x in data.dev_data]
 
-    inv = {v: k for k, v in data.dev_data.lab2i.items()}
-    labels = [inv[i] for i in range(4)]
-    ConfusionMatrixDisplay(confusion_matrix(eval_labels, preds), labels).plot(values_format='d')
-    print(classification_report(eval_labels, preds, target_names=labels, digits=4))
-    
+    label_classes = data.dev_data.label_encoder.classes_
+    ConfusionMatrixDisplay(confusion_matrix(eval_labels, preds), label_classes).plot(values_format='d')
+    print(classification_report(eval_labels, preds, target_names=label_classes, digits=4))
+
     sim = cos_sim(data)
     pred_correctness = [p == l for p, l in zip(preds, eval_labels)]
     correct_sim = [s for s, p in zip(sim, pred_correctness) if p]
@@ -48,11 +47,10 @@ def evaluate(data, model):
 
 def cdplot_class(data):
     eval_labels_i = [x['label'] for x in data.dev_data]
-    inv = {v: k for k, v in data.dev_data.lab2i.items()}
-    eval_labels = [inv[i] for i in eval_labels_i]
-    
+    eval_labels = data.dev_data.label_encoder.inverse_transform(eval_labels_i)
+
     sim = cos_sim(data)
-    
+
     data_dict = {'Cosine Similarity': sim, 'Label': eval_labels}
     with sns.axes_style('whitegrid'), sns.color_palette('muted'):
         sns.displot(data=data_dict, x='Cosine Similarity', hue='Label', kind='kde', height=6, multiple='fill', clip=(0, 1))
