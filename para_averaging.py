@@ -1,9 +1,5 @@
-from para_evaluate import evaluate
-import pytorch_lightning as pl
 import torch.nn.functional as F
-import transformers
 import torch
-import para_data
 import para_model
 
 class ParaAvgModel(para_model.PARAModel):
@@ -11,7 +7,7 @@ class ParaAvgModel(para_model.PARAModel):
     def __init__(self, **args):
         super().__init__(**args)
         # self.drop_layer=torch.nn.Dropout(p=0.2)
-        self.cls_layer=torch.nn.Linear(768*5,4)
+        self.cls_layer=torch.nn.Linear(self.bert.config.hidden_size*5, args['num_classes'])
 
     def forward(self, batch):
         input_ids = batch['input_ids']

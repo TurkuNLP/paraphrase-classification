@@ -5,12 +5,12 @@ import torch
 
 class PARAModel(pl.LightningModule):
 
-    def __init__(self, steps_train=None, weights=None, bert_model="TurkuNLP/bert-base-finnish-cased-v1"):
+    def __init__(self, bert_model, num_classes, steps_train=None, weights=None):
         super().__init__()
         self.steps_train = steps_train
         self.weights = weights
         self.bert=transformers.BertModel.from_pretrained(bert_model)
-        self.cls_layer=torch.nn.Linear(768,4)
+        self.cls_layer=torch.nn.Linear(self.bert.config.hidden_size, num_classes)
         self.accuracy = pl.metrics.Accuracy()
         self.val_accuracy = pl.metrics.Accuracy()
 
