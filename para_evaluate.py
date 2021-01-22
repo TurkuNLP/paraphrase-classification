@@ -13,14 +13,15 @@ def cos_sim(data):
     tfidf_txt2 = torch.tensor(combined.transform(txt2).toarray())
     return [torch.dot(t1, t2).item() for t1, t2 in zip(tfidf_txt1, tfidf_txt2)]
 
-def evaluate(data, model):
+def evaluate(data, model, model_output_to_p):
     with torch.no_grad():
         preds = []
         for batch in data.val_dataloader():
-            output = model({k: v.cuda() for k, v in batch.items()}).argmax(-1)
+            output = model_output_to_p(model({k: v.cuda() for k, v in batch.items()}))
             preds.append(output)
 
     preds = [e.item() for t in preds for e in t]
+
     eval_labels = [x['label'] for x in data.dev_data]
 
     label_classes = data.dev_data.label_encoder.classes_

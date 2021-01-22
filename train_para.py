@@ -6,6 +6,7 @@ import pytorch_lightning as pl
 import para_data
 import para_model
 import para_averaging
+import para_multi_output_model
 
 # Saves both the most accurate evaluated model as well as the last evaluated model.
 checkpoint_callback = pl.callbacks.ModelCheckpoint(
@@ -28,16 +29,12 @@ if __name__=="__main__":
 
     args = parser.parse_args()
     load_checkpoint = args.load_checkpoint
-    if args.model == 'pooler':
-        model_class = para_model.PARAModel
-    else:
-        model_class = para_averaging.ParaAvgModel
     bert_path = args.bert_path
     label_strategy = args.label_strategy
 
     print(f"Using model: {args.model}, with BERT from path: {bert_path}, and label strategy: {label_strategy}")
 
-    epochs = 1
+    epochs = 3
     batch_size = 16
     data=para_data.PARADataModule(".", batch_size, bert_model=bert_path, label_strategy=label_strategy)
     data.setup()
@@ -48,10 +45,34 @@ if __name__=="__main__":
     # weights = torch.tensor(compute_class_weight('balanced', [l for l in range(4)], [t['label'] for t in data.train_data]))
     # print(f"Weights: {weights}")
 
-    if load_checkpoint:
-        model = model_class.load_from_checkpoint(bert_model=bert_path, num_classes=num_classes, steps_train=steps_train, checkpoint_path=load_checkpoint)
+    if args.model == 'multi-output-pooler':
+        model_class = para_multi_output_model.ParaMultiOutputModel
+        model_args = {'class_nums': {k: len(v) for k, v in data.train_data.flag_lab2i.items()}}
+        
+        inv = {n: {v: k for k, v in d.items()} for n, d in data.train_data.flag_lab2i.items()}
+
+        def multi_output_to_pred(batch):
+            str_batch = {k: [inv[k][e.item()] for e in v] for k, v in para_multi_output_model.model_output_to_p(batch).items()}
+            label_batch = [''.join([b,
+                                    d if d is not 'None' and b is '4' else '',
+                                    'i' if i and b is '4' else '',
+                                    's' if s and b is '4' else ''])
+                           for b, d, i, s in zip(str_batch['base'], str_batch['direction'], str_batch['has_i'], str_batch['has_s'])]
+            
+            return data.train_data.label_encoder.transform(label_batch)
+
+        model_output_to_p = multi_output_to_pred
     else:
-        model = model_class(bert_model=bert_path, num_classes=num_classes, steps_train=steps_train)
+        model_args = {'num_classes': num_classes}
+        model_output_to_p = lambda x: x.argmax(-1)
+        if args.model == 'pooler':
+            model_class = para_model.PARAModel
+        else:
+            model_class = para_averaging.ParaAvgModel
+    if load_checkpoint:
+        model = model_class.load_from_checkpoint(bert_model=bert_path, steps_train=steps_train, checkpoint_path=load_checkpoint, **model_args)
+    else:
+        model = model_class(bert_model=bert_path, steps_train=steps_train, **model_args)
 
     trainer = pl.Trainer(
         resume_from_checkpoint=load_checkpoint,
@@ -67,9 +88,9 @@ if __name__=="__main__":
 
     model.eval()
     model.cuda()
-    evaluate(data, model)
+    evaluate(data, model, model_output_to_p)
 
-    best_model = model_class.load_from_checkpoint(bert_model=bert_path, num_classes=num_classes, checkpoint_path=checkpoint_callback.best_model_path)
+    best_model = model_class.load_from_checkpoint(bert_model=bert_path, checkpoint_path=checkpoint_callback.best_model_path, **model_args)
     best_model.eval()
     best_model.cuda()
-    evaluate(data, best_model)
+    evaluate(data, best_model, model_output_to_p)

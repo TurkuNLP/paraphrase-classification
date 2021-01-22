@@ -25,6 +25,13 @@ def coarse_lab(l):
     else:
         return l
 
+def separate_flags(label, encoding_dict):
+    flags = {'base': label[0],
+             'direction': '<' if '<' in label else '>' if '>' in label else 'None',
+             'has_i': 'i' in label,
+             'has_s': 's' in label}
+    return {k: encoding_dict[k][v] for k, v in flags.items()}
+
 class PARADataset(torch.utils.data.Dataset):
 
     def __init__(self, fname, bert_tokenizer, label_strategy, rew_dir=False, label_encoder=None):
@@ -32,12 +39,16 @@ class PARADataset(torch.utils.data.Dataset):
         self.data_list=[]
         self.bert_tokenizer=bert_tokenizer
         self.label_encoder = label_encoder
+        self.flag_lab2i = {'base': {'2': 0, '3': 1, '4': 2},
+                           'direction': {'None': 0, '<': 1, '>': 2},
+                           'has_i': {False: 0, True: 1},
+                           'has_s': {False: 0, True: 1}}
 
         with open(fname, 'r') as f:
             for entry in json.load(f):
                 self.data_list.append({k: entry[k] for k in ['label', 'txt1', 'txt2']})
                 for txt_pair in entry['rewrites']:
-                    self.data_list.append({'label': entry['label'], 'txt1': txt_pair[0], 'txt2': txt_pair[1]})
+                    self.data_list.append({'label': '4', 'txt1': txt_pair[0], 'txt2': txt_pair[1]})
         if rew_dir:
             d = {'<': '>', '>': '<'}
             for i in range(len(self.data_list)):
@@ -65,21 +76,25 @@ class PARADataset(torch.utils.data.Dataset):
         t1_tok=self.bert_tokenizer.convert_tokens_to_ids(self.bert_tokenizer.tokenize(item["txt1"]))
         t2_tok=self.bert_tokenizer.convert_tokens_to_ids(self.bert_tokenizer.tokenize(item["txt2"]))
         encoded=self.bert_tokenizer.prepare_for_model(t1_tok,t2_tok,return_length=True,return_special_tokens_mask=True) #todo overflow and whatnot
+        original_label = self.label_encoder.inverse_transform([item['label']])[0]
 
-        return {"input_ids":encoded.input_ids, "token_type_ids":encoded.token_type_ids, "attention_mask":encoded.attention_mask, "length":encoded.length, "label":item["label"], **compute_masks(encoded.special_tokens_mask)}
+        return {"input_ids":encoded.input_ids, "token_type_ids":encoded.token_type_ids, "attention_mask":encoded.attention_mask, "length":encoded.length, "label":item["label"], 'is_4': 1 if '4' in original_label else 0, **compute_masks(encoded.special_tokens_mask), **separate_flags(original_label, self.flag_lab2i)}
 
 def collate(itemlist):
     batch={}
     for k in "input_ids","attention_mask","token_type_ids", "cls_mask", "sep1_mask", "sep2_mask", "left_mask", "right_mask":
-        batch[k]=pad_with_zero([item[k] for item in itemlist])
-    batch["label"]=torch.LongTensor([item["label"] for item in itemlist])
+        batch[k] = pad_with_zero([item[k] for item in itemlist])
+    batch["label"] = torch.LongTensor([item["label"] for item in itemlist])
+    batch['is_4'] = torch.LongTensor([item['is_4'] for item in itemlist])
+    for k in 'base', 'direction', 'has_i', 'has_s':
+        batch[k] = torch.LongTensor([item[k] for item in itemlist])
     return batch
 
 def pad_with_zero(vals):
     vals=[torch.LongTensor(v) for v in vals]
     tokenized_single_batch=torch.nn.utils.rnn.pad_sequence(vals,batch_first=True)
     return tokenized_single_batch
-    
+
 
 class PARADataModule(pl.LightningDataModule):
 
