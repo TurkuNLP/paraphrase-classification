@@ -30,7 +30,7 @@ class PARAModel(pl.LightningModule):
     def validation_step(self,batch,batch_idx):
         y_hat=self(batch)
         loss=F.cross_entropy(y_hat, batch["label"], weight=None if not self.weights else self.weights.type_as(y_hat))
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, prog_bar=True)
         self.val_accuracy(y_hat, batch["label"])
         self.log("val_acc", self.val_accuracy, prog_bar=True, on_epoch=True)
 

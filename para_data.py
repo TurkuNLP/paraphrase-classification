@@ -15,8 +15,6 @@ def compute_masks(mask):
     return {'cls_mask': cls_mask, 'sep1_mask': sep1_mask, 'sep2_mask': sep2_mask, 'left_mask': left_mask, 'right_mask': right_mask}
 
 def coarse_lab(l):
-    if l[0] not in "43":
-        return None
     if len(l)>=2:
         if l[1] in "<>":
             return l[:2]
@@ -58,7 +56,10 @@ class PARADataset(torch.utils.data.Dataset):
         if label_strategy == 'coarse':
             for entry in self.data_list:
                 entry['label'] = coarse_lab(entry['label'])
-            self.data_list = [d for d in self.data_list if d['label']]
+        elif label_strategy == 'coarse-above-2':
+            for entry in self.data_list:
+                entry['label'] = coarse_lab(entry['label'])
+            self.data_list = [d for d in self.data_list if d['label'][0] in '34']
 
         if not self.label_encoder:
             self.label_encoder = LabelEncoder()

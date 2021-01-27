@@ -6,7 +6,15 @@ import torch
 def model_output_to_p(out):
     return {k: v.argmax(-1) for k, v in out.items()}
 
-class ParaMultiOutputModel(pl.LightningModule):
+# Encodes prediction and target 2D-vectors as 1D-vectors for use with the accuracy metric.
+def encode_tensors(pred, target):
+    base = max(pred.max(), target.max()).item() + 1
+    return encode_tensor(pred, base), encode_tensor(target, base)
+
+def encode_tensor(tensor, base):
+    return torch.tensor([sum(base**i * n.item() for i, n in enumerate(v)) for v in tensor])
+
+class ParaMultiOutputPoolerModel(pl.LightningModule):
 
     def __init__(self, bert_model, class_nums, steps_train=None, weights=None):
         super().__init__()
@@ -28,7 +36,7 @@ class ParaMultiOutputModel(pl.LightningModule):
         base_loss = F.cross_entropy(out['base'], batch['base'], weight=None if not self.weights else self.weights[k].type_as(out))
         flag_losses = [F.cross_entropy(out[k], batch[k], weight=None if not self.weights else self.weights[k].type_as(out), reduction='none') for k in ['direction', 'has_i', 'has_s']]
         mean_losses = [torch.mean(t*batch['is_4']) for t in flag_losses]
-        self.accuracy(torch.stack(list(model_output_to_p(out).values())), torch.stack([batch[k] for k in ['base', 'direction', 'has_i', 'has_s']]))
+        self.accuracy(*encode_tensors(torch.stack(list(model_output_to_p(out).values())), torch.stack([batch[k] for k in ['base', 'direction', 'has_i', 'has_s']])))
         self.log("train_acc", self.accuracy, prog_bar=True, on_step=True, on_epoch=True)
         return base_loss + sum(mean_losses)
 
@@ -37,8 +45,9 @@ class ParaMultiOutputModel(pl.LightningModule):
         base_loss = F.cross_entropy(out['base'], batch['base'], weight=None if not self.weights else self.weights[k].type_as(out))
         flag_losses = [F.cross_entropy(out[k], batch[k], weight=None if not self.weights else self.weights[k].type_as(out), reduction='none') for k in ['direction', 'has_i', 'has_s']]
         mean_losses = [torch.mean(t*batch['is_4']) for t in flag_losses]
-        self.log("val_loss", base_loss + sum(mean_losses))
-        self.val_accuracy(torch.stack(list(model_output_to_p(out).values())), torch.stack([batch[k] for k in ['base', 'direction', 'has_i', 'has_s']]))
+        self.log("val_loss", base_loss + sum(mean_losses), prog_bar=True)
+        encoded = encode_tensors(torch.stack(list(model_output_to_p(out).values())), torch.stack([batch[k] for k in ['base', 'direction', 'has_i', 'has_s']]))
+        self.val_accuracy(*encoded)
         self.log("val_acc", self.val_accuracy, prog_bar=True, on_epoch=True)
 
     def configure_optimizers(self):
@@ -46,3 +55,30 @@ class ParaMultiOutputModel(pl.LightningModule):
         scheduler = transformers.optimization.get_linear_schedule_with_warmup(optimizer, num_warmup_steps=int(self.steps_train*0.1), num_training_steps=self.steps_train)
         scheduler = {'scheduler': scheduler, 'interval': 'step', 'frequency': 1}
         return [optimizer], [scheduler]
+
+class ParaMultiOutputAvgModel(ParaMultiOutputPoolerModel):
+ 
+    def __init__(self, **args):
+        super().__init__(**args)
+        # self.drop_layer=torch.nn.Dropout(p=0.2)
+        self.cls_layers = torch.nn.ModuleDict({name: torch.nn.Linear(self.bert.config.hidden_size*5, n) for name, n in args['class_nums'].items()})
+
+    def forward(self, batch):
+        input_ids = batch['input_ids']
+        token_type_ids = batch['token_type_ids']
+        attention_mask = batch['attention_mask']
+        cls_mask = batch['cls_mask']
+        sep1_mask = batch['sep1_mask']
+        sep2_mask = batch['sep2_mask']
+        left_mask = batch['left_mask']
+        right_mask = batch['right_mask']
+        enc = self.bert(input_ids=input_ids,attention_mask=attention_mask,token_type_ids=token_type_ids)[0] #BxS_LENxSIZE; BxSIZE
+        cls = (enc*cls_mask.unsqueeze(-1)).sum(1) # enc.pooler_output
+        sep1 = (enc*sep1_mask.unsqueeze(-1)).sum(1)
+        sep2 = (enc*sep2_mask.unsqueeze(-1)).sum(1)
+        left = (enc*left_mask.unsqueeze(-1)).sum(1) / left_mask.sum(-1).unsqueeze(-1)
+        right = (enc*right_mask.unsqueeze(-1)).sum(1) / right_mask.sum(-1).unsqueeze(-1)
+        catenated = torch.cat((cls, sep1, sep2, left, right), -1)
+        # dropped = self.drop_layer(catenated)
+
+        return {name: layer(catenated) for name, layer in self.cls_layers.items()}

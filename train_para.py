@@ -26,16 +26,17 @@ if __name__=="__main__":
     parser.add_argument('--model', default='averaging')
     parser.add_argument('--bert_path', default='TurkuNLP/bert-base-finnish-cased-v1')
     parser.add_argument('--label_strategy', default='coarse')
+    parser.add_argument('--epochs', default=3)
 
     args = parser.parse_args()
     load_checkpoint = args.load_checkpoint
     bert_path = args.bert_path
     label_strategy = args.label_strategy
+    epochs = int(args.epochs)
 
-    print(f"Using model: {args.model}, with BERT from path: {bert_path}, and label strategy: {label_strategy}")
+    print(f"Using model: {args.model}, BERT from path: {bert_path}, label strategy: {label_strategy}, epochs {epochs}")
 
-    epochs = 3
-    batch_size = 16
+    batch_size = 8
     data=para_data.PARADataModule(".", batch_size, bert_model=bert_path, label_strategy=label_strategy)
     data.setup()
     size_train = len(data.train_data)
@@ -45,8 +46,7 @@ if __name__=="__main__":
     # weights = torch.tensor(compute_class_weight('balanced', [l for l in range(4)], [t['label'] for t in data.train_data]))
     # print(f"Weights: {weights}")
 
-    if args.model == 'multi-output-pooler':
-        model_class = para_multi_output_model.ParaMultiOutputModel
+    if args.model in ['multi-output-pooler', 'multi-output-averaging']:
         model_args = {'class_nums': {k: len(v) for k, v in data.train_data.flag_lab2i.items()}}
         
         inv = {n: {v: k for k, v in d.items()} for n, d in data.train_data.flag_lab2i.items()}
@@ -62,13 +62,21 @@ if __name__=="__main__":
             return data.train_data.label_encoder.transform(label_batch)
 
         model_output_to_p = multi_output_to_pred
+        if args.model == 'multi-output-pooler':
+            model_class = para_multi_output_model.ParaMultiOutputPoolerModel
+        else:
+            model_class = para_multi_output_model.ParaMultiOutputAvgModel
     else:
         model_args = {'num_classes': num_classes}
         model_output_to_p = lambda x: x.argmax(-1)
         if args.model == 'pooler':
             model_class = para_model.PARAModel
-        else:
+        elif args.model == 'averaging':
             model_class = para_averaging.ParaAvgModel
+        else:
+            print(f"Unknown model: {args.model}")
+            raise SystemExit
+    
     if load_checkpoint:
         model = model_class.load_from_checkpoint(bert_model=bert_path, steps_train=steps_train, checkpoint_path=load_checkpoint, **model_args)
     else:
