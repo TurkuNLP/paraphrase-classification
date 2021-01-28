@@ -1,5 +1,4 @@
-from sklearn.metrics import classification_report
-from para_evaluate import evaluate
+from para_evaluate import evaluate, print_results
 import torch
 import argparse
 import pytorch_lightning as pl
@@ -26,17 +25,24 @@ if __name__=="__main__":
     parser.add_argument('--model', default='averaging')
     parser.add_argument('--bert_path', default='TurkuNLP/bert-base-finnish-cased-v1')
     parser.add_argument('--label_strategy', default='coarse')
+    parser.add_argument('--batch_size', default=8)
     parser.add_argument('--epochs', default=3)
+    parser.add_argument('--evaluate', default=None)
 
     args = parser.parse_args()
     load_checkpoint = args.load_checkpoint
     bert_path = args.bert_path
     label_strategy = args.label_strategy
+    batch_size = int(args.batch_size)
     epochs = int(args.epochs)
+    evaluate_set = args.evaluate
 
-    print(f"Using model: {args.model}, BERT from path: {bert_path}, label strategy: {label_strategy}, epochs {epochs}")
+    print(f"Using model: {args.model}, BERT from path: {bert_path}, label strategy: {label_strategy}, batch size: {batch_size}, epochs: {epochs}")
+    if evaluate_set:
+        print(f"Evaluating on {evaluate_set}")
+    else:
+        print("Training only")
 
-    batch_size = 8
     data=para_data.PARADataModule(".", batch_size, bert_model=bert_path, label_strategy=label_strategy)
     data.setup()
     size_train = len(data.train_data)
@@ -94,11 +100,22 @@ if __name__=="__main__":
 
     trainer.fit(model, datamodule=data)
 
-    model.eval()
-    model.cuda()
-    evaluate(data, model, model_output_to_p)
+    if evaluate_set == 'dev':
+        dataset = data.dev_data
+        dataloader = data.val_dataloader()
+    elif evaluate_set == 'test':
+        dataset = data.test_data
+        dataloader = data.test_dataloader()
+    elif evaluate_set:
+        print(f"Unknown evaluation set: {evaluate_set}")
+        raise SystemExit
 
-    best_model = model_class.load_from_checkpoint(bert_model=bert_path, checkpoint_path=checkpoint_callback.best_model_path, **model_args)
-    best_model.eval()
-    best_model.cuda()
-    evaluate(data, best_model, model_output_to_p)
+    if evaluate_set:
+        model.eval()
+        model.cuda()
+        print_results(*evaluate(dataloader, dataset, model, model_output_to_p), save_directory='plots')
+
+        best_model = model_class.load_from_checkpoint(bert_model=bert_path, checkpoint_path=checkpoint_callback.best_model_path, **model_args)
+        best_model.eval()
+        best_model.cuda()
+        print_results(*evaluate(dataloader, dataset, best_model, model_output_to_p), save_directory='plots')
