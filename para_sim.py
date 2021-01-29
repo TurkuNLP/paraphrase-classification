@@ -25,9 +25,10 @@ def parse_json(file_path):
     return data_list
 
 def cdplot_class(sim, labels, path):
+    label_classes = sorted([*{*labels}])
     data_dict = {'Cosine Similarity': sim, 'Label': labels}
-    with sns.axes_style('whitegrid'), sns.color_palette('muted'):
-        sns.displot(data=data_dict, x='Cosine Similarity', hue='Label', kind='kde', height=6, multiple='fill', clip=(0, 1))
+    with sns.axes_style('whitegrid'), sns.color_palette('Paired', n_colors=len(label_classes)):
+        sns.displot(data=data_dict, x='Cosine Similarity', hue='Label', hue_order=label_classes, kind='kde', height=6, multiple='fill', clip=(0, 1))
         plt.show()
         plt.savefig(path / 'cos_sim_label_density_plot.pdf')
         plt.close()
