@@ -1,4 +1,4 @@
-from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay, precision_recall_fscore_support
 from sklearn.feature_extraction.text import TfidfVectorizer
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -25,6 +25,33 @@ def evaluate(dataloader, dataset, model, model_output_to_p):
     target = [x['label'] for x in dataset]
     label_classes = dataset.label_encoder.classes_
     sim = cos_sim(dataset)
+    
+    str_preds = dataset.label_encoder.inverse_transform(preds)
+    str_target = dataset.label_encoder.inverse_transform(target)
+    i_preds = ['i' in p for p in str_preds]
+    i_target = ['i' in p for p in str_target]
+    s_preds = ['s' in p for p in str_preds]
+    s_target = ['s' in p for p in str_target]
+    coarse_preds = [p.replace('i', '').replace('s', '') for p in str_preds]
+    coarse_target = [p.replace('i', '').replace('s', '') for p in str_target]
+    coarse_classes = sorted([*{*coarse_target}])
+
+    i_row = [e.item() for e in precision_recall_fscore_support(i_target, i_preds, labels=[True])]
+    s_row = [e.item() for e in precision_recall_fscore_support(s_target, s_preds, labels=[True])]
+    prec, recall, f1, support = [l.tolist() + [i] + [s] for l, i, s in zip(precision_recall_fscore_support(coarse_target, coarse_preds, labels=coarse_classes), i_row, s_row)]
+    fprec = [f'{e:.4f}' for e in prec]
+    frecall = [f'{e:.4f}' for e in recall]
+    ff1 = [f'{e:.4f}' for e in f1]
+    fsupport = [f'{e:d}' for e in support]
+    rows = [list(l) for l in zip(*[coarse_classes + ['i'] + ['s'], fprec, frecall, ff1, fsupport])]
+    rows = rows[:-2] + [[]] + rows[-2:]
+    print('\t'.join(['', '', 'prec', 'recall', 'f1', 'support']))
+    for row in rows:
+        print('\t' + '\t'.join(row))
+    print()
+    print('\t'.join(['weighted avg', *[f'{e.item():.4f}' for e in precision_recall_fscore_support(str_target, str_preds, average='weighted')[:3]]]))
+    print()
+
     return preds, target, label_classes, sim
 
 def print_results(preds, target, label_classes, sim, save_directory=None):

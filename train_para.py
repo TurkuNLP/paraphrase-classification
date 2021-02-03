@@ -1,4 +1,5 @@
 from para_evaluate import evaluate, print_results
+from para_classify_tsv import classify_tsv
 import torch
 import argparse
 import pytorch_lightning as pl
@@ -28,6 +29,8 @@ if __name__=="__main__":
     parser.add_argument('--batch_size', default=8)
     parser.add_argument('--epochs', default=3)
     parser.add_argument('--evaluate', default=None)
+    parser.add_argument('--no_train', action='store_true')
+    parser.add_argument('--classify_tsv', nargs=2, default=None)
 
     args = parser.parse_args()
     load_checkpoint = args.load_checkpoint
@@ -36,12 +39,15 @@ if __name__=="__main__":
     batch_size = int(args.batch_size)
     epochs = int(args.epochs)
     evaluate_set = args.evaluate
+    no_train = args.no_train
+    tsv_fname = args.classify_tsv[0]
+    tsv_out_fname = args.classify_tsv[1]
 
     print(f"Using model: {args.model}, BERT from path: {bert_path}, label strategy: {label_strategy}, batch size: {batch_size}, epochs: {epochs}")
     if evaluate_set:
         print(f"Evaluating on {evaluate_set}")
     else:
-        print("Training only")
+        print("No evaluation")
 
     data=para_data.PARADataModule(".", batch_size, bert_model=bert_path, label_strategy=label_strategy)
     data.setup()
@@ -98,7 +104,8 @@ if __name__=="__main__":
         callbacks=[checkpoint_callback]
     )
 
-    trainer.fit(model, datamodule=data)
+    if not no_train:
+        trainer.fit(model, datamodule=data)
 
     if evaluate_set == 'dev':
         dataset = data.dev_data
@@ -110,12 +117,16 @@ if __name__=="__main__":
         print(f"Unknown evaluation set: {evaluate_set}")
         raise SystemExit
 
+    model.eval()
+    model.cuda()
     if evaluate_set:
-        model.eval()
-        model.cuda()
         print_results(*evaluate(dataloader, dataset, model, model_output_to_p), save_directory='plots')
+        
+        if not no_train:
+            best_model = model_class.load_from_checkpoint(bert_model=bert_path, checkpoint_path=checkpoint_callback.best_model_path, **model_args)
+            best_model.eval()
+            best_model.cuda()
+            print_results(*evaluate(dataloader, dataset, best_model, model_output_to_p), save_directory='plots')
 
-        best_model = model_class.load_from_checkpoint(bert_model=bert_path, checkpoint_path=checkpoint_callback.best_model_path, **model_args)
-        best_model.eval()
-        best_model.cuda()
-        print_results(*evaluate(dataloader, dataset, best_model, model_output_to_p), save_directory='plots')
+    if tsv_fname:
+        classify_tsv(model, bert_path, batch_size, tsv_fname, tsv_out_fname)
