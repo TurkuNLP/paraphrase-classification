@@ -54,5 +54,5 @@ def classify_tsv(model, bert_model, batch_size, fname, out_fname):
             for _, v, t1, t2 in sorted(zip(original_indexes, classified, txt1, txt2), key=lambda x: x[0]):
                 tsv_writer.writerow([*v.tolist(), t1, t2])
 
-            print(f"Batch {i+1} complete. Lines written: {i*line_batch_size + len(txt1)}. Batch time: {time.time() - start:.2f} s")
+            print(f"Batch {i+1} complete. Lines written: {i*line_batch_size + len(txt1)}. Batch time: {time.time() - start:.2f} s", flush=True)
             start = time.time()

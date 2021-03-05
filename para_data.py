@@ -55,6 +55,12 @@ class PARADataset(torch.utils.data.Dataset):
             for entry in self.data_list:
                 entry['label'] = coarse_lab(entry['label'])
             self.data_list = [d for d in self.data_list if d['label'][0] in '34']
+        elif label_strategy == 'binary':
+            self.flag_lab2i['base'] = {'1': 0, '4': 1}
+            for entry in self.data_list:
+                entry['label'] = '4' if entry['label'][0] == '4' else '1'
+        elif label_strategy == 'with-1':
+            self.flag_lab2i['base'] = {'1': 0, '2': 1, '3': 2, '4': 3}
 
         if not self.label_encoder:
             self.label_encoder = LabelEncoder()
@@ -106,17 +112,20 @@ def pad_with_zero(vals):
 
 class PARADataModule(pl.LightningDataModule):
 
-    def __init__(self, data_dir, batch_size, bert_model, label_strategy):
+    def __init__(self, batch_size, bert_model, label_strategy, train_fname, dev_fname, test_fname):
         super().__init__()
         self.batch_size = batch_size
         self.bert_model = bert_model
         self.label_strategy = label_strategy
+        self.train_fname = train_fname
+        self.dev_fname = dev_fname
+        self.test_fname = test_fname
 
     def setup(self,stage=None):
         self.bert_tokenizer=transformers.BertTokenizer.from_pretrained(self.bert_model)
-        self.train_data=PARADataset.from_json("train.json", bert_tokenizer=self.bert_tokenizer, label_strategy=self.label_strategy, rew_dir=True)
-        self.dev_data=PARADataset.from_json("dev.json", bert_tokenizer=self.bert_tokenizer, label_strategy=self.label_strategy, label_encoder=self.train_data.label_encoder)
-        self.test_data=PARADataset.from_json("test.json", bert_tokenizer=self.bert_tokenizer, label_strategy=self.label_strategy, label_encoder=self.train_data.label_encoder)
+        self.train_data=PARADataset.from_json(self.train_fname, bert_tokenizer=self.bert_tokenizer, label_strategy=self.label_strategy, rew_dir=True)
+        self.dev_data=PARADataset.from_json(self.dev_fname, bert_tokenizer=self.bert_tokenizer, label_strategy=self.label_strategy, label_encoder=self.train_data.label_encoder)
+        self.test_data=PARADataset.from_json(self.test_fname, bert_tokenizer=self.bert_tokenizer, label_strategy=self.label_strategy, label_encoder=self.train_data.label_encoder)
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train_data, collate_fn=collate, batch_size=self.batch_size, shuffle=True)

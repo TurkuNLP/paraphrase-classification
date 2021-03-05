@@ -1,5 +1,6 @@
-from para_evaluate import evaluate, print_results
+from para_evaluate import evaluate
 from para_classify_tsv import classify_tsv
+from para_cluster_tsv import cluster_tsv
 import torch
 import argparse
 import pytorch_lightning as pl
@@ -7,16 +8,6 @@ import para_data
 import para_model
 import para_averaging
 import para_multi_output_model
-
-# Saves both the most accurate evaluated model as well as the last evaluated model.
-checkpoint_callback = pl.callbacks.ModelCheckpoint(
-    monitor='val_acc',
-    dirpath='checkpoints',
-    filename='para-val_acc-max',
-    save_top_k=1,
-    mode='max',
-    save_last=True
-)
 
 lr_monitor_callback = pl.callbacks.LearningRateMonitor(logging_interval='step')
 
@@ -31,6 +22,9 @@ if __name__=="__main__":
     parser.add_argument('--evaluate', default=None)
     parser.add_argument('--no_train', action='store_true')
     parser.add_argument('--classify_tsv', nargs=2, default=None)
+    parser.add_argument('--cluster_tsv', nargs=2, default=None)
+    parser.add_argument('--json', nargs=3, default=['train.json', 'dev.json', 'test.json'])
+    parser.add_argument('--model_out_dir', nargs=1, default=['checkpoints'])
 
     args = parser.parse_args()
     load_checkpoint = args.load_checkpoint
@@ -40,16 +34,16 @@ if __name__=="__main__":
     epochs = int(args.epochs)
     evaluate_set = args.evaluate
     no_train = args.no_train
-    tsv_fname = args.classify_tsv[0]
-    tsv_out_fname = args.classify_tsv[1]
+    train_fname, dev_fname, test_fname = args.json
+    model_out_dir = args.model_out_dir[0]
 
-    print(f"Using model: {args.model}, BERT from path: {bert_path}, label strategy: {label_strategy}, batch size: {batch_size}, epochs: {epochs}")
+    print(f"Using model: {args.model}, BERT from path: {bert_path}, label strategy: {label_strategy}, batch size: {batch_size}, epochs: {epochs}", flush=True)
     if evaluate_set:
-        print(f"Evaluating on {evaluate_set}")
+        print(f"Evaluating on {evaluate_set}", flush=True)
     else:
-        print("No evaluation")
+        print("No evaluation", flush=True)
 
-    data=para_data.PARADataModule(".", batch_size, bert_model=bert_path, label_strategy=label_strategy)
+    data=para_data.PARADataModule(batch_size, bert_model=bert_path, label_strategy=label_strategy, train_fname=train_fname, dev_fname=dev_fname, test_fname=test_fname)
     data.setup()
     size_train = len(data.train_data)
     steps_per_epoch = int(size_train/batch_size)
@@ -86,13 +80,23 @@ if __name__=="__main__":
         elif args.model == 'averaging':
             model_class = para_averaging.ParaAvgModel
         else:
-            print(f"Unknown model: {args.model}")
+            print(f"Unknown model: {args.model}", flush=True)
             raise SystemExit
     
     if load_checkpoint:
         model = model_class.load_from_checkpoint(bert_model=bert_path, steps_train=steps_train, checkpoint_path=load_checkpoint, **model_args)
     else:
         model = model_class(bert_model=bert_path, steps_train=steps_train, **model_args)
+
+    # Saves both the most accurate evaluated model as well as the last evaluated model.
+    checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        monitor='val_acc',
+        dirpath=model_out_dir,
+        filename='para-val_acc-max',
+        save_top_k=1,
+        mode='max',
+        save_last=True
+    )
 
     trainer = pl.Trainer(
         resume_from_checkpoint=load_checkpoint,
@@ -114,19 +118,24 @@ if __name__=="__main__":
         dataset = data.test_data
         dataloader = data.test_dataloader()
     elif evaluate_set:
-        print(f"Unknown evaluation set: {evaluate_set}")
+        print(f"Unknown evaluation set: {evaluate_set}", flush=True)
         raise SystemExit
 
     model.eval()
     model.cuda()
     if evaluate_set:
-        print_results(*evaluate(dataloader, dataset, model, model_output_to_p), save_directory='plots')
+        evaluate(dataloader, dataset, model, model_output_to_p, save_directory='plots')
         
         if not no_train:
             best_model = model_class.load_from_checkpoint(bert_model=bert_path, checkpoint_path=checkpoint_callback.best_model_path, **model_args)
             best_model.eval()
             best_model.cuda()
-            print_results(*evaluate(dataloader, dataset, best_model, model_output_to_p), save_directory='plots')
+            evaluate(dataloader, dataset, best_model, model_output_to_p, save_directory='plots')
 
-    if tsv_fname:
+    if args.classify_tsv:
+        tsv_fname, tsv_out_fname = args.classify_tsv
         classify_tsv(model, bert_path, batch_size, tsv_fname, tsv_out_fname)
+
+    if args.cluster_tsv:
+        tsv_fname, tsv_out_fname = args.cluster_tsv
+        cluster_tsv(model, bert_path, batch_size, label_strategy, tsv_fname, tsv_out_fname)

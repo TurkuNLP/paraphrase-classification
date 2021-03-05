@@ -14,7 +14,7 @@ def cos_sim(dataset):
     tfidf_txt2 = torch.tensor(combined.transform(txt2).toarray())
     return [torch.dot(t1, t2).item() for t1, t2 in zip(tfidf_txt1, tfidf_txt2)]
 
-def evaluate(dataloader, dataset, model, model_output_to_p):
+def evaluate(dataloader, dataset, model, model_output_to_p, save_directory=None):
     with torch.no_grad():
         preds = []
         for batch in dataloader:
@@ -52,14 +52,11 @@ def evaluate(dataloader, dataset, model, model_output_to_p):
     print('\t'.join(['weighted avg', *[f'{e.item():.4f}' for e in precision_recall_fscore_support(str_target, str_preds, average='weighted')[:3]]]))
     print()
 
-    return preds, target, label_classes, sim
-
-def print_results(preds, target, label_classes, sim, save_directory=None):
     if save_directory:
         path = Path(save_directory)
         path.mkdir(parents=True, exist_ok=True)
 
-    ConfusionMatrixDisplay(confusion_matrix(target, preds), label_classes).plot(values_format='d')
+#    ConfusionMatrixDisplay(confusion_matrix(target, preds), label_classes).plot(values_format='d')
     print(classification_report(target, preds, target_names=label_classes, digits=4))
 
     pred_correctness = [p == l for p, l in zip(preds, target)]

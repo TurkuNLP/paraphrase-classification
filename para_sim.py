@@ -15,7 +15,7 @@ def cos_sim(data_list):
     tfidf_txt2 = combined.transform(txt2).toarray()
     return [np.dot(t1, t2).item() for t1, t2 in zip(tfidf_txt1, tfidf_txt2)]
 
-def parse_json(file_path):
+def parse_json(fname):
     data_list = []
     with open(fname, 'r') as f:
         for entry in json.load(f):
