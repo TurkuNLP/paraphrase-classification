@@ -55,12 +55,22 @@ class PARADataset(torch.utils.data.Dataset):
             for entry in self.data_list:
                 entry['label'] = coarse_lab(entry['label'])
             self.data_list = [d for d in self.data_list if d['label'][0] in '34']
-        elif label_strategy == 'binary':
+        elif label_strategy == 'binary-4':
             self.flag_lab2i['base'] = {'1': 0, '4': 1}
             for entry in self.data_list:
                 entry['label'] = '4' if entry['label'][0] == '4' else '1'
+        elif label_strategy == 'binary-4-4s':
+            self.flag_lab2i['base'] = {'1': 0, '4': 1}
+            for entry in self.data_list:
+                entry['label'] = '4' if entry['label'] == '4' or entry['label'] == '4s' else '1'
         elif label_strategy == 'with-1':
             self.flag_lab2i['base'] = {'1': 0, '2': 1, '3': 2, '4': 3}
+        elif label_strategy == 'combined-neg':
+            for entry in self.data_list:
+                if entry['label'][0] == '1':
+                    entry['label'] = '2'
+        else: # If 1's are not included, leave them out of the data.
+            self.data_list = [d for d in self.data_list if d['label'][0] != '1']
 
         if not self.label_encoder:
             self.label_encoder = LabelEncoder()

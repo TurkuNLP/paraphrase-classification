@@ -134,7 +134,7 @@ if __name__=="__main__":
 
     if args.classify_tsv:
         tsv_fname, tsv_out_fname = args.classify_tsv
-        classify_tsv(model, bert_path, batch_size, tsv_fname, tsv_out_fname)
+        classify_tsv(model, bert_path, batch_size, tsv_fname, tsv_out_fname, label_strategy=label_strategy)
 
     if args.cluster_tsv:
         tsv_fname, tsv_out_fname = args.cluster_tsv

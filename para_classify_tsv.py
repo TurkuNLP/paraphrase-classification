@@ -33,7 +33,7 @@ def classify(model, dataloader):
         d[k] = torch.cat([b[k] for b in preds], dim=0)
     return d
 
-def classify_tsv(model, bert_model, batch_size, fname, out_fname):
+def classify_tsv(model, bert_model, batch_size, fname, out_fname, label_strategy=None):
     line_batch_size = 100000
     bert_tokenizer = transformers.BertTokenizer.from_pretrained(bert_model)
     with open(out_fname, 'wt', newline='') as f:
@@ -43,7 +43,7 @@ def classify_tsv(model, bert_model, batch_size, fname, out_fname):
             original_indexes, sorted_batch = transpose(sorted(enumerate(batch), key=lambda x: sum(len(bert_tokenizer.tokenize(t)) for t in x[1])))
             txt1, txt2 = transpose(sorted_batch)
             data_list = [{'label': '4', 'txt1': t1, 'txt2': t2} for t1, t2 in zip(txt1, txt2)]
-            dataset = PARADataset(data_list=data_list, bert_tokenizer=bert_tokenizer, label_strategy=None, label_encoder=None)
+            dataset = PARADataset(data_list=data_list, bert_tokenizer=bert_tokenizer, label_strategy=label_strategy, label_encoder=None)
             dataloader = torch.utils.data.DataLoader(dataset, collate_fn=collate, batch_size=batch_size)
             classified = classify(model, dataloader)
             if i == 0:

@@ -56,7 +56,8 @@ def evaluate(dataloader, dataset, model, model_output_to_p, save_directory=None)
         path = Path(save_directory)
         path.mkdir(parents=True, exist_ok=True)
 
-#    ConfusionMatrixDisplay(confusion_matrix(target, preds), label_classes).plot(values_format='d')
+    ConfusionMatrixDisplay(confusion_matrix(target, preds), display_labels=label_classes).plot(values_format='d')
+    plt.savefig(path / "evaluation_confusion_matrix.pdf")
     print(classification_report(target, preds, target_names=label_classes, digits=4))
 
     pred_correctness = [p == l for p, l in zip(preds, target)]
