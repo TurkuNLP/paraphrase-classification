@@ -25,6 +25,7 @@ if __name__=="__main__":
     parser.add_argument('--cluster_tsv', nargs=2, default=None)
     parser.add_argument('--json', nargs=3, default=['train.json', 'dev.json', 'test.json'])
     parser.add_argument('--model_out_dir', nargs=1, default=['checkpoints'])
+    parser.add_argument('--label_smoothing', default=0)
 
     args = parser.parse_args()
     load_checkpoint = args.load_checkpoint
@@ -36,6 +37,7 @@ if __name__=="__main__":
     no_train = args.no_train
     train_fname, dev_fname, test_fname = args.json
     model_out_dir = args.model_out_dir[0]
+    smooth = float(args.label_smoothing)
 
     print(f"Using model: {args.model}, BERT from path: {bert_path}, label strategy: {label_strategy}, batch size: {batch_size}, epochs: {epochs}", flush=True)
     if evaluate_set:
@@ -84,9 +86,9 @@ if __name__=="__main__":
             raise SystemExit
     
     if load_checkpoint:
-        model = model_class.load_from_checkpoint(bert_model=bert_path, steps_train=steps_train, checkpoint_path=load_checkpoint, **model_args)
+        model = model_class.load_from_checkpoint(bert_model=bert_path, steps_train=steps_train, smooth=smooth, checkpoint_path=load_checkpoint, **model_args)
     else:
-        model = model_class(bert_model=bert_path, steps_train=steps_train, **model_args)
+        model = model_class(bert_model=bert_path, steps_train=steps_train, smooth=smooth, **model_args)
 
     # Saves both the most accurate evaluated model as well as the last evaluated model.
     checkpoint_callback = pl.callbacks.ModelCheckpoint(

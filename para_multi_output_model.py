@@ -14,9 +14,19 @@ def encode_tensors(pred, target):
 def encode_tensor(tensor, base):
     return torch.tensor([sum(base**i * n.item() for i, n in enumerate(v)) for v in tensor])
 
+def smooth_loss(out, target, smooth, ignored=None):
+    logp = F.log_softmax(out, dim=-1)
+    nll_loss = -logp.gather(dim=-1, index=target.unsqueeze(1))
+    nll_loss = nll_loss.squeeze(1)
+    smooth_loss = -logp.mean(dim=-1)
+    loss = (1-smooth)*nll_loss + smooth * smooth_loss
+    if ignored is not None:
+        loss = loss*ignored
+    return loss.mean()
+
 class ParaMultiOutputPoolerModel(pl.LightningModule):
 
-    def __init__(self, bert_model, class_nums, steps_train=None, weights=None):
+    def __init__(self, bert_model, class_nums, smooth=0, steps_train=None, weights=None):
         super().__init__()
         self.steps_train = steps_train
         self.weights = weights
@@ -24,6 +34,7 @@ class ParaMultiOutputPoolerModel(pl.LightningModule):
         self.cls_layers = torch.nn.ModuleDict({name: torch.nn.Linear(self.bert.config.hidden_size, n) for name, n in class_nums.items()})
         self.accuracy = pl.metrics.Accuracy()
         self.val_accuracy = pl.metrics.Accuracy()
+        self.smooth = smooth
 
     def forward(self,batch):
         enc=self.bert(input_ids=batch['input_ids'],
@@ -33,19 +44,17 @@ class ParaMultiOutputPoolerModel(pl.LightningModule):
 
     def training_step(self,batch,batch_idx):
         out = self(batch)
-        base_loss = F.cross_entropy(out['base'], batch['base'], weight=None if not self.weights else self.weights[k].type_as(out))
-        flag_losses = [F.cross_entropy(out[k], batch[k], weight=None if not self.weights else self.weights[k].type_as(out), reduction='none') for k in ['direction', 'has_i', 'has_s']]
-        mean_losses = [torch.mean(t*batch['is_4']) for t in flag_losses]
+        base_loss = smooth_loss(out['base'], batch['base'], self.smooth)
+        flag_losses = [smooth_loss(out[k], batch[k], self.smooth, ignored=batch['is_4']) for k in ['direction', 'has_i', 'has_s']]
         self.accuracy(*encode_tensors(torch.stack(list(model_output_to_p(out).values())), torch.stack([batch[k] for k in ['base', 'direction', 'has_i', 'has_s']])))
         self.log("train_acc", self.accuracy, prog_bar=True, on_step=True, on_epoch=True)
-        return base_loss + sum(mean_losses)
+        return base_loss + sum(flag_losses)
 
     def validation_step(self,batch,batch_idx):
         out = self(batch)
-        base_loss = F.cross_entropy(out['base'], batch['base'], weight=None if not self.weights else self.weights[k].type_as(out))
-        flag_losses = [F.cross_entropy(out[k], batch[k], weight=None if not self.weights else self.weights[k].type_as(out), reduction='none') for k in ['direction', 'has_i', 'has_s']]
-        mean_losses = [torch.mean(t*batch['is_4']) for t in flag_losses]
-        self.log("val_loss", base_loss + sum(mean_losses), prog_bar=True)
+        base_loss = smooth_loss(out['base'], batch['base'], self.smooth)
+        flag_losses = [smooth_loss(out[k], batch[k], self.smooth, ignored=batch['is_4']) for k in ['direction', 'has_i', 'has_s']]
+        self.log("val_loss", base_loss + sum(flag_losses), prog_bar=True)
         encoded = encode_tensors(torch.stack(list(model_output_to_p(out).values())), torch.stack([batch[k] for k in ['base', 'direction', 'has_i', 'has_s']]))
         self.val_accuracy(*encoded)
         self.log("val_acc", self.val_accuracy, prog_bar=True, on_epoch=True)

@@ -86,8 +86,9 @@ class PARADataset(torch.utils.data.Dataset):
         with open(fname, 'r') as f:
             for entry in json.load(f):
                 data_list.append({k: entry[k] for k in ['label', 'txt1', 'txt2']})
-                for txt_pair in entry['rewrites']:
-                    data_list.append({'label': '4', 'txt1': txt_pair[0], 'txt2': txt_pair[1]})
+                if 'rewrites' in entry:
+                    for txt_pair in entry['rewrites']:
+                        data_list.append({'label': '4', 'txt1': txt_pair[0], 'txt2': txt_pair[1]})
         
         return cls(data_list, **args)
 
