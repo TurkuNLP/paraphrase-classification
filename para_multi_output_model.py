@@ -26,11 +26,14 @@ def smooth_loss(out, target, smooth, ignored=None):
 
 class ParaMultiOutputPoolerModel(pl.LightningModule):
 
-    def __init__(self, bert_model, class_nums, smooth=0, steps_train=None, weights=None):
+    def __init__(self, bert_model, flag_lab2i, smooth=0, steps_train=None, weights=None, **args):
         super().__init__()
+        self.save_hyperparameters()
         self.steps_train = steps_train
         self.weights = weights
         self.bert = transformers.BertModel.from_pretrained(bert_model)
+        self.flag_lab2i = flag_lab2i
+        class_nums = {k: len(v) for k, v in self.flag_lab2i.items()}
         self.cls_layers = torch.nn.ModuleDict({name: torch.nn.Linear(self.bert.config.hidden_size, n) for name, n in class_nums.items()})
         self.accuracy = pl.metrics.Accuracy()
         self.val_accuracy = pl.metrics.Accuracy()
@@ -69,8 +72,10 @@ class ParaMultiOutputAvgModel(ParaMultiOutputPoolerModel):
  
     def __init__(self, **args):
         super().__init__(**args)
+        self.save_hyperparameters()
         # self.drop_layer=torch.nn.Dropout(p=0.2)
-        self.cls_layers = torch.nn.ModuleDict({name: torch.nn.Linear(self.bert.config.hidden_size*5, n) for name, n in args['class_nums'].items()})
+        class_nums = {k: len(v) for k, v in args['flag_lab2i'].items()}
+        self.cls_layers = torch.nn.ModuleDict({name: torch.nn.Linear(self.bert.config.hidden_size*5, n) for name, n in class_nums.items()})
 
     def forward(self, batch):
         input_ids = batch['input_ids']

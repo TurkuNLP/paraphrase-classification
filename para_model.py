@@ -7,6 +7,7 @@ class PARAModel(pl.LightningModule):
 
     def __init__(self, bert_model, num_classes, steps_train=None, weights=None):
         super().__init__()
+        self.save_hyperparameters()
         self.steps_train = steps_train
         self.weights = weights
         self.bert=transformers.BertModel.from_pretrained(bert_model)

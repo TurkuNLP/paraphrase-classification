@@ -18,7 +18,7 @@ if __name__=="__main__":
     parser.add_argument('--bert_path', default='TurkuNLP/bert-base-finnish-cased-v1')
     parser.add_argument('--label_strategy', default='coarse')
     parser.add_argument('--batch_size', default=8)
-    parser.add_argument('--epochs', default=3)
+    parser.add_argument('--epochs', default=0)
     parser.add_argument('--evaluate', default=None)
     parser.add_argument('--no_train', action='store_true')
     parser.add_argument('--classify_tsv', nargs=2, default=None)
@@ -86,7 +86,7 @@ if __name__=="__main__":
             raise SystemExit
     
     if load_checkpoint:
-        model = model_class.load_from_checkpoint(bert_model=bert_path, steps_train=steps_train, smooth=smooth, checkpoint_path=load_checkpoint, **model_args)
+        model = model_class.load_from_checkpoint(checkpoint_path=load_checkpoint, flag_lab2i=data.train_data.flag_lab2i)
     else:
         model = model_class(bert_model=bert_path, steps_train=steps_train, smooth=smooth, **model_args)
 
@@ -123,13 +123,21 @@ if __name__=="__main__":
         print(f"Unknown evaluation set: {evaluate_set}", flush=True)
         raise SystemExit
 
+    # trainer.save_checkpoint(model_out_dir + '/test.ckpt')
+    # checkpoint = torch.load(model_out_dir + '/test.ckpt')
+    # print(checkpoint['hyper_parameters'])
+    # del checkpoint['hyper_parameters']['class_nums']
+    # torch.save(checkpoint, model_out_dir + '/test.ckpt')
+    # checkpoint = torch.load(model_out_dir + '/test.ckpt')
+    # print(checkpoint['hyper_parameters'])
+
     model.eval()
     model.cuda()
     if evaluate_set:
         evaluate(dataloader, dataset, model, model_output_to_p, save_directory='plots')
         
         if not no_train:
-            best_model = model_class.load_from_checkpoint(bert_model=bert_path, checkpoint_path=checkpoint_callback.best_model_path, **model_args)
+            best_model = model_class.load_from_checkpoint(checkpoint_path=checkpoint_callback.best_model_path)
             best_model.eval()
             best_model.cuda()
             evaluate(dataloader, dataset, best_model, model_output_to_p, save_directory='plots')
